@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local machine and editor files
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Downloaded datasets and generated inference outputs.
+# Recreate these with scripts/prepare_coco_subset.py and scripts/infer.py.
+data/coco_subset*/
+outputs/
+
+# HuggingFace / Torch caches and model weights
+.cache/
+cache/
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# LaTeX intermediate files
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# Keep lightweight, report-ready artifacts.
+!report/figures/
+!report/figures/**
+!results/
+!results/**
+!data/custom_demo/
+!data/custom_demo/README.md

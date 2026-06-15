@@ -1,0 +1,10 @@
+torch
+torchvision
+transformers>=4.47
+pillow
+requests
+tqdm
+numpy
+pycocotools
+pandas
+matplotlib

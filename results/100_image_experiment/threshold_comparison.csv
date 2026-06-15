@@ -1,0 +1,6 @@
+source,experiment_name,box_threshold,text_threshold,inference_mode,nms_iou_threshold,post_score_cutoff,AP,AP50,AP75,AR100,valid_predictions,unmatched_predictions
+outputs/eval_100_tiny_t025/metrics_summary.json,tiny100_multi_t025,0.25,0.25,multi_class,,,0.19702006681947434,0.2681183289795857,0.2081031788760061,0.3141595176110249,816,118
+outputs/eval_100_tiny_perclass_nms_t025/metrics_summary.json,tiny100_perclass_nms_t025,0.25,0.25,per_class,0.5,,0.23546651864645557,0.28322167068296833,0.26685996443292115,0.5229131639112847,2711,0
+outputs/eval_100_tiny_perclass_nms_t025_score030/metrics_summary.json,tiny100_perclass_nms_t025_score030,0.25,0.25,per_class,0.5,0.3,0.22719789155441364,0.27054740411935396,0.25724664275497744,0.4741003234341655,1878,0
+outputs/eval_100_tiny_perclass_nms_t025_score035/metrics_summary.json,tiny100_perclass_nms_t025_score035,0.25,0.25,per_class,0.5,0.35,0.21942824202925587,0.2578100547652612,0.2484173693175697,0.43090122543615084,1334,0
+outputs/eval_100_tiny_perclass_nms_t025_score040/metrics_summary.json,tiny100_perclass_nms_t025_score040,0.25,0.25,per_class,0.5,0.4,0.21156802314654763,0.24643253818874905,0.23980639784593785,0.3765729079716453,918,0

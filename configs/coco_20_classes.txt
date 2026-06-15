@@ -1,0 +1,20 @@
+person
+bicycle
+car
+motorcycle
+bus
+truck
+traffic light
+dog
+cat
+horse
+chair
+couch
+dining table
+bottle
+cup
+laptop
+book
+backpack
+umbrella
+cell phone
