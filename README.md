@@ -35,7 +35,7 @@ The best current setting is `per-class prompt + NMS` with thresholds `box=0.25`,
 ## Environment
 
 ```bash
-cd project4_ovd
+cd ComputerVisionProject  # or the repository root after cloning
 python -m pip install -r requirements.txt
 ```
 

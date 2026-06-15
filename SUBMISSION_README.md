@@ -8,13 +8,12 @@ This repository contains code, report drafts, lightweight results, and presentat
 - Code zip: create from this repository root after replacing group information:
 
 ```bash
-cd ..
-zip -r groupid_code.zip project4_ovd \
-  -x "project4_ovd/data/coco_subset*" \
-  -x "project4_ovd/outputs/*" \
-  -x "project4_ovd/.git/*" \
-  -x "project4_ovd/__pycache__/*" \
-  -x "project4_ovd/**/__pycache__/*"
+zip -r groupid_code.zip . \
+  -x "data/coco_subset*" \
+  -x "outputs/*" \
+  -x ".git/*" \
+  -x "__pycache__/*" \
+  -x "**/__pycache__/*"
 ```
 
 - Supplementary material: optional. If included, use the report figures and failure cases already summarized under `report/figures/` and `results/`.
