@@ -13,10 +13,16 @@ The implementation uses HuggingFace `transformers` instead of compiling the orig
 ## Grading Policy Coverage
 
 - **Report**: see `report/report_draft_zh.pdf`. It follows the provided template and includes introduction, related work, method, experiments, conclusion, references, and member contribution placeholders.
+- **Grounding DINO paper**: see `papers/grounding_dino_arxiv_2303.05499.pdf`.
+- **Current pipeline explanation**: see `docs/pipeline_zh.md`.
 - **Experimental results**: see `results/100_image_experiment/` for lightweight CSV/JSON summaries and `report/figures/` for report-ready figures.
 - **Presentation**: see `presentation/presentation_outline_zh.md` for a 15-minute Chinese presentation outline and likely Q&A points.
 - **Supplementary/code submission README**: see `SUBMISSION_README.md`.
 - **Topic bonus**: this is Topic 4, so it is eligible for the frontier-topic bonus if the implementation quality is accepted.
+
+## Reproduction Scope
+
+This project does not train Grounding DINO from scratch. The model backbone, pretrained weights, HuggingFace processor, and Grounding DINO post-processing API are reused from the open-source model interface. The project contribution is the complete open-vocabulary detection experiment pipeline around that model: prompt normalization, single-image and batch inference, per-class prompt strategy, NMS and score cutoff, COCO subset preparation, COCOeval evaluation, per-class AP, threshold comparison, and failure-case visualization.
 
 ## Main 100-Image Results
 

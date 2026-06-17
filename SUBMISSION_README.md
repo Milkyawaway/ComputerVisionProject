@@ -26,6 +26,8 @@ zip -r groupid_code.zip . \
 - `scripts/export_failure_cases.py`: false positive / false negative visualization.
 - `src/ovd/`: Grounding DINO wrapper and visualization utilities.
 - `configs/`: COCO 20-class prompts and custom demo prompt.
+- `papers/`: Grounding DINO paper used as the main method reference.
+- `docs/`: Chinese explanation of the current reproduction pipeline.
 - `report/`: Chinese report draft, LaTeX source, PDF, and embedded figures.
 - `results/100_image_experiment/`: lightweight metric summaries used in the report.
 - `presentation/`: presentation outline and Q&A preparation.
