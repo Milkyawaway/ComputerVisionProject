@@ -29,7 +29,7 @@ zip -r groupid_code.zip . \
 - `papers/`: Grounding DINO paper used as the main method reference.
 - `docs/`: Chinese explanation of the current reproduction pipeline.
 - `report/`: Chinese report draft, LaTeX source, PDF, and embedded figures.
-- `results/100_image_experiment/`: lightweight metric summaries used in the report.
+- `results/1000_image_base_experiment/`: lightweight metric summaries used in the report.
 - `presentation/`: presentation outline and Q&A preparation.
 - `tests/`: lightweight post-processing and evaluation utility tests.
 
@@ -44,35 +44,33 @@ python -m pip install -r requirements.txt
 python -m unittest discover -s tests
 ```
 
-Prepare a 100-image subset:
+Prepare the 1000-image subset used in the report:
 
 ```bash
 python scripts/prepare_coco_subset.py \
-  --max-images 100 \
+  --max-images 1000 \
   --download-images \
-  --output-dir data/coco_subset_100
+  --output-dir data/coco_subset_1000
 ```
 
-Run the best reported inference setting:
+Run the best AP inference setting:
 
 ```bash
 python scripts/infer.py \
-  --image-dir data/coco_subset_100/images \
-  --prompt-file data/coco_subset_100/prompts/coco_20_classes.txt \
-  --model-id IDEA-Research/grounding-dino-tiny \
+  --image-dir data/coco_subset_1000/images \
+  --prompt-file data/coco_subset_1000/prompts/coco_20_classes.txt \
+  --model-id IDEA-Research/grounding-dino-base \
   --box-threshold 0.25 \
   --text-threshold 0.25 \
-  --per-class-prompts \
-  --nms-iou-threshold 0.5 \
-  --output-dir outputs/coco_subset_100_tiny_perclass_nms_t025
+  --output-dir outputs/coco_subset_1000_base_multiclass_t025
 ```
 
 Evaluate:
 
 ```bash
 python scripts/eval_coco.py \
-  --annotations data/coco_subset_100/annotations/instances_val2017_subset.json \
-  --pred-dir outputs/coco_subset_100_tiny_perclass_nms_t025 \
-  --output-dir outputs/eval_100_tiny_perclass_nms_t025 \
-  --experiment-name tiny_perclass_nms_t025
+  --annotations data/coco_subset_1000/annotations/instances_val2017_subset.json \
+  --pred-dir outputs/coco_subset_1000_base_multiclass_t025 \
+  --output-dir outputs/eval_1000_base_multiclass_t025 \
+  --experiment-name base1000_multiclass_t025
 ```

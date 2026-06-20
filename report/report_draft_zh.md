@@ -35,18 +35,50 @@ CLIP 通过大规模图文对比学习，将图像和文本映射到共享语义
 3. 输出检测框、文本标签和置信度；
 4. 将预测结果可视化；
 5. 将预测结果转换为 COCO detection 格式；
+<!-- 
+From
+
+{
+  "image_path": "data/coco_subset_1000/images/000000008762.jpg",
+  "boxes_xyxy": [
+    [x0, y0, x1, y1]
+  ],
+  "scores": [
+    0.73
+  ],
+  "text_labels": [
+    "a person"
+  ]
+}
+
+TO
+
+[
+  {
+    "image_id": 8762,
+    "category_id": 1, ("a person" → "person" → category_id = 1)
+    "bbox": [x, y, width, height],
+    "score": 0.73
+  }
+]
+
+ -->
 6. 使用 COCOeval 计算 AP、AP50、AP75 和 AR 等指标；
+<!-- AP       IoU=0.50:0.95 的平均精度，最严格、最综合
+AP50     IoU=0.50 时的 AP，定位要求较宽松
+AP75     IoU=0.75 时的 AP，定位要求更严格
+AP_small 小目标 AP
+AP_medium 中目标 AP
+AP_large 大目标 AP
+AR100    每张图最多 100 个预测框时的平均召回率
+Recall = TP / (TP + FN)
+ -->
 7. 对不同 threshold 和 prompt 策略进行对比分析；
 8. 导出 false positive 和 false negative 失败案例。
 
 ### 3.2 Grounding DINO 推理
 
-我们没有从头训练模型，而是使用预训练的 Grounding DINO 模型进行 zero-shot 推理。项目中主要使用 HuggingFace 模型接口：
-
-- `IDEA-Research/grounding-dino-tiny`
-- `IDEA-Research/grounding-dino-base`
-
-考虑到 100 张图片实验的运行时间，本报告中的主要 100 张定量实验使用 `grounding-dino-tiny`。在小规模 smoke test 中也尝试了 `grounding-dino-base`，但在 20 张图上的结果与 tiny 接近，因此最终报告重点分析更完整的 100 张 tiny 实验。
+我们没有从头训练模型，而是使用预训练的 Grounding DINO 模型进行 zero-shot 推理。本文所有正式定量实验统一使用 HuggingFace 模型 `IDEA-Research/grounding-dino-base`。这样可以避免不同模型规模带来的干扰，使实验重点集中在 threshold、prompt 方式和后处理策略对开放词汇检测结果的影响。
 
 ### 3.3 Prompt 设计
 
@@ -87,16 +119,11 @@ person, bicycle, car, motorcycle, bus, truck, traffic light, dog, cat, horse,
 chair, couch, dining table, bottle, cup, laptop, book, backpack, umbrella, cell phone
 ```
 
-我们构建了两个子集：
+本文主要实验使用 1000 张图片正式实验子集。该子集包含：
 
-1. 20 张图片 smoke test 子集，用于快速验证流程；
-2. 100 张图片正式实验子集，用于主要定量分析。
-
-100 张子集包含：
-
-- 图片数：100
+- 图片数：1000
 - 类别数：20
-- 标注框数：660
+- 标注框数：5892
 
 数据准备脚本会保留 COCO annotation 格式，方便后续使用 COCOeval 进行标准目标检测评估。
 
@@ -122,8 +149,8 @@ chair, couch, dining table, bottle, cup, laptop, book, backpack, umbrella, cell 
 
 | 配置项 | 设置 |
 |---|---|
-| 模型 | IDEA-Research/grounding-dino-tiny |
-| 图像数量 | 100 |
+| 模型 | IDEA-Research/grounding-dino-base |
+| 图像数量 | 1000 |
 | 类别数量 | 20 |
 | box threshold | 0.25 |
 | text threshold | 0.25 |
@@ -153,9 +180,9 @@ box threshold = 0.40
 text threshold = 0.30
 ```
 
-在 20 张 smoke test 上，AP 仅为 0.0586，AR100 仅为 0.0702，说明模型漏检严重。将 threshold 降至 0.25 / 0.25 后，AP 提升到 0.2866，AP50 提升到 0.3801，说明较低阈值能显著增加召回。
+在 1000 张 `grounding-dino-base` 正式实验中，默认 threshold 0.40 / 0.30 过于保守，AP 只有 0.0732，AR100 只有 0.0883；降低到 0.25 / 0.25 后，AP 提升到 0.2073，AP50 提升到 0.2975，AR100 提升到 0.3073。继续降低到 0.20 / 0.20 时，有效预测数从 5924 增加到 11272，未匹配预测数从 731 增加到 2188，误检和标签匹配失败变多，AP 下降到 0.1804。
 
-但继续降低到 0.20 / 0.20 后，候选框数量进一步增加，误检增多，AP 下降到 0.2453。因此后续实验采用：
+因此后续主实验采用：
 
 ```text
 box threshold = 0.25
@@ -164,38 +191,42 @@ text threshold = 0.25
 
 #### 4.4.2 Multi-class Prompt 与 Per-class Prompt 对比
 
-100 张 COCO 子集上的主要结果如下：
+1000 张 COCO 子集上的主要结果如下：
 
 | 方法 | AP | AP50 | AP75 | AR100 | 有效预测数 | 未匹配预测数 |
 |---|---:|---:|---:|---:|---:|---:|
-| multi-class prompt | 0.1970 | 0.2681 | 0.2081 | 0.3142 | 816 | 118 |
-| per-class prompt + NMS | 0.2355 | 0.2832 | 0.2669 | 0.5229 | 2711 | 0 |
-| per-class + NMS + score cutoff 0.30 | 0.2272 | 0.2705 | 0.2572 | 0.4741 | 1878 | 0 |
-| per-class + NMS + score cutoff 0.35 | 0.2194 | 0.2578 | 0.2484 | 0.4309 | 1334 | 0 |
-| per-class + NMS + score cutoff 0.40 | 0.2116 | 0.2464 | 0.2398 | 0.3766 | 918 | 0 |
+| multi-class prompt, 0.40 / 0.30 | 0.0732 | 0.0988 | 0.0820 | 0.0883 | 1263 | 10 |
+| multi-class prompt, 0.25 / 0.25 | **0.2073** | **0.2975** | **0.2289** | 0.3073 | 5924 | 731 |
+| multi-class prompt, 0.20 / 0.20 | 0.1804 | 0.2780 | 0.1924 | 0.3023 | 11272 | 2188 |
+| per-class prompt + NMS | 0.1284 | 0.1592 | 0.1427 | **0.4478** | 29706 | **0** |
+| per-class + NMS + score cutoff 0.30 | 0.1225 | 0.1500 | 0.1364 | 0.3997 | 20956 | **0** |
+| per-class + NMS + score cutoff 0.35 | 0.1174 | 0.1420 | 0.1308 | 0.3578 | 14872 | **0** |
+| per-class + NMS + score cutoff 0.40 | 0.1122 | 0.1348 | 0.1252 | 0.3239 | 10321 | **0** |
 
-从结果可以看出，per-class prompt + NMS 是当前最好的方法。相比 multi-class prompt，它将 AP 从 0.1970 提升到 0.2355，将 AP75 从 0.2081 提升到 0.2669，将 AR100 从 0.3142 提升到 0.5229。同时，未匹配预测数从 118 降至 0，说明单类别 prompt 有效减少了文本标签混乱问题。
+从结果可以看出，在 1000 张图片的 `grounding-dino-base` 实验中，最佳 AP 来自 multi-class prompt, 0.25 / 0.25。per-class prompt + NMS 并没有提高 AP，但它有两个明显效果：第一，未匹配预测数从 731 降到 0，说明逐类别 prompt 消除了混合文本标签导致的类别映射失败；第二，AR100 从 0.3073 提升到 0.4478，说明它能找回更多真实目标。
 
-但是该方法也存在代价：有效预测数从 816 增加到 2711，说明候选框数量显著增加，precision 仍有提升空间；同时每张图需要对 20 个类别分别推理，速度大约比 multi-class prompt 慢 20 倍。
+代价也很明显：per-class prompt + NMS 的有效预测数达到 29706，是 multi-class 0.25 / 0.25 的约 5 倍，false positive 明显增加，因此 precision 和 AP 下降。score cutoff 可以减少预测数量，但同时也会降低 recall，最终 AP 仍低于 multi-class 0.25 / 0.25。
 
-![100 张 COCO 子集实验对比](figures/threshold_comparison_100.png)
+![1000 张 COCO 子集 threshold 对比](figures/threshold_comparison_1000_base.png)
+
+![1000 张 COCO 子集 prompt 和 score cutoff 对比](figures/prompt_comparison_1000_base.png)
 
 #### 4.4.3 每类 AP 分析
 
-在 multi-class prompt 方法中，表现较好的类别包括 laptop、person、motorcycle、couch、bus 等。per-class prompt + NMS 后，部分类别明显改善：
+在最佳配置 multi-class prompt, 0.25 / 0.25 下，表现较好的类别包括 laptop、person、cat、bus、couch 和 cup；表现较差的类别包括 book、dog、truck、bicycle、traffic light 和 cell phone。这说明 Grounding DINO 对大目标、外观清晰的类别更加稳定，而对小目标、遮挡目标和视觉差异较大的类别仍然困难。
 
-| 类别 | baseline AP | 改进后 AP | 变化 |
-|---|---:|---:|---:|
-| dog | 0.022 | 0.540 | +0.517 |
-| bus | 0.284 | 0.434 | +0.150 |
-| cell phone | 0.125 | 0.251 | +0.125 |
-| truck | 0.003 | 0.119 | +0.115 |
-| cat | 0.168 | 0.283 | +0.115 |
-| couch | 0.292 | 0.388 | +0.095 |
+| 类别 | AP |
+|---|---:|
+| laptop | 0.6821 |
+| person | 0.4329 |
+| cat | 0.4196 |
+| bus | 0.4046 |
+| couch | 0.3252 |
+| cup | 0.2362 |
 
-也有部分类别下降，例如 laptop、motorcycle、car、horse、book 和 chair。这说明 per-class prompt 并不是对所有类别都稳定提升，它主要改善了因多类别 prompt 混乱导致的漏检问题，但也可能引入更多低质量候选框。
+per-class prompt + NMS 对少数低召回类别有帮助，例如 dog 的 AP 从 0.0347 提升到 0.1910，truck 从 0.0387 提升到 0.1454，bicycle 从 0.0529 提升到 0.0762。但是它也会显著降低一些原本检测较好的类别，例如 laptop 从 0.6821 降到 0.3055，cat 从 0.4196 降到 0.1866，bus 从 0.4046 降到 0.2071。因此，本实验最终将 per-class prompt 视为 recall-oriented 改进，而不是整体 AP 最优方案。
 
-![改进方法每类 AP](figures/per_class_ap_100_perclass_nms.png)
+![最佳配置每类 AP](figures/per_class_ap_1000_base_multiclass_t025.png)
 
 #### 4.4.4 失败案例分析
 
@@ -215,9 +246,9 @@ text threshold = 0.25
 
 示例失败案例可视化如下：
 
-![Baseline false negative case](figures/baseline_false_negative_case.jpg)
+![Multi-class false negative case](figures/base1000_multiclass_false_negative_case.jpg)
 
-![Per-class false positive case](figures/perclass_false_positive_case.jpg)
+![Per-class false positive case](figures/base1000_perclass_false_positive_case.jpg)
 
 #### 4.4.5 自采图片 Demo
 
@@ -237,11 +268,11 @@ person, chair, laptop, bottle, backpack, book, cell phone, cup
 
 ## 5. Conclusion
 
-本项目复现了基于 Grounding DINO 的开放词汇目标检测流程，并在 COCO val2017 子集上完成了定量评估和结果分析。实验表明，threshold 对开放词汇检测性能影响明显，过高阈值会导致严重漏检；将 box threshold 和 text threshold 设为 0.25 后，召回率显著提升。
+本项目复现了基于 Grounding DINO 的开放词汇目标检测流程，并在 COCO val2017 的 1000 张、20 类子集上完成了定量评估和结果分析。实验表明，threshold 对开放词汇检测性能影响明显，过高阈值会导致严重漏检；将 box threshold 和 text threshold 设为 0.25 后，AP 从 0.0732 提升到 0.2073，AR100 从 0.0883 提升到 0.3073。
 
-进一步地，我们提出并实现了 per-class prompt + NMS 的改进方法。该方法通过逐类别查询减少了文本标签混乱问题，在 100 张 COCO 子集上将 AP 从 0.1970 提升到 0.2355，将 AR100 从 0.3142 提升到 0.5229，并将未匹配预测数从 118 降至 0。该结果说明 prompt 设计和后处理策略对开放词汇检测模型具有重要影响。
+进一步地，我们实现了 per-class prompt + NMS 的改进方法。该方法通过逐类别查询减少文本标签混乱问题，将未匹配预测数从 731 降至 0，并将 AR100 从 0.3073 提升到 0.4478。但它同时产生大量候选框，使有效预测数增加到 29706，false positive 增多，AP 下降到 0.1284。因此，本实验最终选择 multi-class prompt, 0.25 / 0.25 作为 AP 最优配置，而将 per-class prompt + NMS 作为提高 recall 和减少标签混乱的补充方案。
 
-不过，该方法也存在明显局限：逐类别推理会显著降低速度，并产生更多候选框，导致 false positive 增加。未来可以继续探索更好的 prompt 模板、类别自适应阈值、跨类别 NMS、以及更强的开放词汇检测模型（如 Grounding DINO base、YOLO-World 或 GLIP）来进一步提升性能。
+未来可以继续探索更好的 prompt 模板、类别自适应阈值、跨类别 NMS、按类别单独调节 score cutoff，以及 YOLO-World 或 GLIP 等其他开放词汇检测模型来进一步提升性能。
 
 ## Reference
 

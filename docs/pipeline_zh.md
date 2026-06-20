@@ -158,14 +158,14 @@ a car.
 a traffic light.
 ```
 
-然后将所有类别结果合并。优点是标签更干净，unmatched prediction 明显减少，recall 更高。缺点是速度约随类别数线性增加，并且会产生更多候选框。
+然后将所有类别结果合并。优点是标签更干净，unmatched prediction 明显减少，recall 更高。缺点是速度约随类别数线性增加，并且会产生更多候选框和 false positive。
 
-当前 100 张图片实验中，per-class prompt + NMS 是效果最好的方案：
+当前 1000 张 `grounding-dino-base` 实验中，multi-class prompt, 0.25 / 0.25 是 AP 最优方案；per-class prompt + NMS 的 AR100 更高、未匹配标签为 0，但 AP 更低：
 
 | Method | AP | AP50 | AP75 | AR100 | Unmatched predictions |
 |---|---:|---:|---:|---:|---:|
-| multi-class prompt | 0.1970 | 0.2681 | 0.2081 | 0.3142 | 118 |
-| per-class prompt + NMS | 0.2355 | 0.2832 | 0.2669 | 0.5229 | 0 |
+| multi-class prompt, 0.25 / 0.25 | 0.2073 | 0.2975 | 0.2289 | 0.3073 | 731 |
+| per-class prompt + NMS | 0.1284 | 0.1592 | 0.1427 | 0.4478 | 0 |
 
 ## 7. Post-Processing
 
@@ -180,14 +180,14 @@ a traffic light.
 
 ```bash
 python scripts/infer.py \
-  --image-dir data/coco_subset_100/images \
-  --prompt-file data/coco_subset_100/prompts/coco_20_classes.txt \
-  --model-id IDEA-Research/grounding-dino-tiny \
+  --image-dir data/coco_subset_1000/images \
+  --prompt-file data/coco_subset_1000/prompts/coco_20_classes.txt \
+  --model-id IDEA-Research/grounding-dino-base \
   --box-threshold 0.25 \
   --text-threshold 0.25 \
   --per-class-prompts \
   --nms-iou-threshold 0.5 \
-  --output-dir outputs/coco_subset_100_tiny_perclass_nms_t025
+  --output-dir outputs/coco_subset_1000_base_perclass_nms_t025
 ```
 
 ## 8. COCO-Style Evaluation

@@ -15,7 +15,7 @@ The implementation uses HuggingFace `transformers` instead of compiling the orig
 - **Report**: see `report/report_draft_zh.pdf`. It follows the provided template and includes introduction, related work, method, experiments, conclusion, references, and member contribution placeholders.
 - **Grounding DINO paper**: see `papers/grounding_dino_arxiv_2303.05499.pdf`.
 - **Current pipeline explanation**: see `docs/pipeline_zh.md`.
-- **Experimental results**: see `results/100_image_experiment/` for lightweight CSV/JSON summaries and `report/figures/` for report-ready figures.
+- **Experimental results**: see `results/1000_image_base_experiment/` for lightweight CSV/JSON summaries and `report/figures/` for report-ready figures.
 - **Presentation**: see `presentation/presentation_outline_zh.md` for a 15-minute Chinese presentation outline and likely Q&A points.
 - **Supplementary/code submission README**: see `SUBMISSION_README.md`.
 - **Topic bonus**: this is Topic 4, so it is eligible for the frontier-topic bonus if the implementation quality is accepted.
@@ -24,19 +24,21 @@ The implementation uses HuggingFace `transformers` instead of compiling the orig
 
 This project does not train Grounding DINO from scratch. The model backbone, pretrained weights, HuggingFace processor, and Grounding DINO post-processing API are reused from the open-source model interface. The project contribution is the complete open-vocabulary detection experiment pipeline around that model: prompt normalization, single-image and batch inference, per-class prompt strategy, NMS and score cutoff, COCO subset preparation, COCOeval evaluation, per-class AP, threshold comparison, and failure-case visualization.
 
-## Main 100-Image Results
+## Main 1000-Image Base Results
 
-The main experiment uses 100 COCO val2017 subset images, 20 open-vocabulary categories, and Grounding DINO tiny.
+The main experiment uses 1000 COCO val2017 subset images, 20 open-vocabulary categories, and `IDEA-Research/grounding-dino-base`.
 
 | Method | AP | AP50 | AP75 | AR100 | Valid predictions | Unmatched predictions |
 |---|---:|---:|---:|---:|---:|---:|
-| multi-class prompt | 0.1970 | 0.2681 | 0.2081 | 0.3142 | 816 | 118 |
-| per-class prompt + NMS | 0.2355 | 0.2832 | 0.2669 | 0.5229 | 2711 | 0 |
-| per-class + NMS + score cutoff 0.30 | 0.2272 | 0.2705 | 0.2572 | 0.4741 | 1878 | 0 |
-| per-class + NMS + score cutoff 0.35 | 0.2194 | 0.2578 | 0.2484 | 0.4309 | 1334 | 0 |
-| per-class + NMS + score cutoff 0.40 | 0.2116 | 0.2464 | 0.2398 | 0.3766 | 918 | 0 |
+| multi-class prompt, 0.40 / 0.30 | 0.0732 | 0.0988 | 0.0820 | 0.0883 | 1263 | 10 |
+| multi-class prompt, 0.25 / 0.25 | 0.2073 | 0.2975 | 0.2289 | 0.3073 | 5924 | 731 |
+| multi-class prompt, 0.20 / 0.20 | 0.1804 | 0.2780 | 0.1924 | 0.3023 | 11272 | 2188 |
+| per-class prompt + NMS | 0.1284 | 0.1592 | 0.1427 | 0.4478 | 29706 | 0 |
+| per-class + NMS + score cutoff 0.30 | 0.1225 | 0.1500 | 0.1364 | 0.3997 | 20956 | 0 |
+| per-class + NMS + score cutoff 0.35 | 0.1174 | 0.1420 | 0.1308 | 0.3578 | 14872 | 0 |
+| per-class + NMS + score cutoff 0.40 | 0.1122 | 0.1348 | 0.1252 | 0.3239 | 10321 | 0 |
 
-The best current setting is `per-class prompt + NMS` with thresholds `box=0.25`, `text=0.25`, and `nms_iou=0.5`. It improves AP from `0.1970` to `0.2355` and AR100 from `0.3142` to `0.5229`, mainly by reducing mixed text labels and missed detections.
+The best AP setting is multi-class prompting with `box=0.25` and `text=0.25`. Per-class prompting with NMS improves AR100 and removes unmatched labels, but it produces many more false positives and lowers AP.
 
 ## Environment
 
@@ -45,7 +47,7 @@ cd ComputerVisionProject  # or the repository root after cloning
 python -m pip install -r requirements.txt
 ```
 
-The default model is `IDEA-Research/grounding-dino-base`. If download time or memory is a concern, use `--model-id IDEA-Research/grounding-dino-tiny`.
+The default model is `IDEA-Research/grounding-dino-base`.
 
 ## Single Image Demo
 
@@ -103,15 +105,15 @@ To reproduce the score-cutoff variants used in the report:
 
 ```bash
 python scripts/infer.py \
-  --image-dir data/coco_subset_100/images \
-  --prompt-file data/coco_subset_100/prompts/coco_20_classes.txt \
-  --model-id IDEA-Research/grounding-dino-tiny \
+  --image-dir data/coco_subset_1000/images \
+  --prompt-file data/coco_subset_1000/prompts/coco_20_classes.txt \
+  --model-id IDEA-Research/grounding-dino-base \
   --box-threshold 0.25 \
   --text-threshold 0.25 \
   --per-class-prompts \
   --nms-iou-threshold 0.5 \
   --post-score-cutoff 0.30 \
-  --output-dir outputs/coco_subset_100_tiny_perclass_nms_t025_score030
+  --output-dir outputs/coco_subset_1000_base_perclass_nms_t025_score030
 ```
 
 ## COCO Evaluation
@@ -164,10 +166,10 @@ python scripts/eval_coco.py \
 
 ```bash
 python scripts/export_failure_cases.py \
-  --annotations data/coco_subset_100/annotations/instances_val2017_subset.json \
-  --predictions outputs/eval_100_tiny_perclass_nms_t025/predictions_coco.json \
-  --image-dir data/coco_subset_100/images \
-  --output-dir outputs/failure_cases_100_perclass \
+  --annotations data/coco_subset_1000/annotations/instances_val2017_subset.json \
+  --predictions outputs/eval_1000_base_multiclass_t025/predictions_coco.json \
+  --image-dir data/coco_subset_1000/images \
+  --output-dir outputs/failure_cases_1000_base_multiclass_t025 \
   --top-k 12
 ```
 

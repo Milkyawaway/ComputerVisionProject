@@ -50,24 +50,71 @@ VAL_IMAGE_BASE_URL = "http://images.cocodataset.org/val2017/"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Prepare a COCO val2017 subset for open-vocabulary detection.")
-    parser.add_argument("--output-dir", type=Path, default=Path("data/coco_subset"))
-    parser.add_argument("--max-images", type=int, default=500)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--download-images", action="store_true")
-    parser.add_argument("--annotations-json", type=Path, help="Existing instances_val2017.json path.")
-    parser.add_argument("--annotations-zip-url", default=ANNOTATIONS_ZIP_URL)
-    parser.add_argument("--image-base-url", default=VAL_IMAGE_BASE_URL)
-    parser.add_argument("--source-image-dir", type=Path, help="Optional local val2017 image directory to copy from.")
-    parser.add_argument("--class-file", type=Path, help="Optional class list, one class per line.")
+    parser = argparse.ArgumentParser(description="准备用于开放词汇检测的 COCO val2017 子集。")
+
+    # 输出目录。脚本会在其中创建 annotations/、metadata/、prompts/、
+    # downloads/，如果启用图片下载，还会创建 images/。
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("data/coco_subset"),
+        help="子集输出目录，包含 annotations、prompts、metadata、downloads 和可选 images。",
+    )
+
+    # 子集中最多保留多少张图片。采样时会先尽量覆盖所有目标类别，
+    # 再用随机候选图片补满剩余数量。
+    parser.add_argument(
+        "--max-images",
+        type=int,
+        default=500,
+        help="生成子集中最多保留的图片数量。",
+    )
+
+    # 固定随机种子，保证多次运行时抽取到相同的图片子集。
+    parser.add_argument("--seed", type=int, default=42, help="图片采样使用的随机种子。")
+
+    # 只有开启该开关时才会下载或复制图片；不开启时仍然会生成
+    # annotation、manifest 和 prompt 文件。
+    parser.add_argument(
+        "--download-images",
+        action="store_true",
+        help="将选中的图片下载或复制到子集 images 目录。",
+    )
+
+    # 如果本地已经有 COCO instances_val2017.json，可以直接指定该文件，
+    # 避免重新下载并解压官方 annotation 压缩包。
+    parser.add_argument("--annotations-json", type=Path, help="已有 instances_val2017.json 的本地路径。")
+
+    # 覆盖默认 URL，主要用于镜像源、内网文件服务器或调试。
+    parser.add_argument(
+        "--annotations-zip-url",
+        default=ANNOTATIONS_ZIP_URL,
+        help="COCO annotation 压缩包 URL，也可以替换成结构相同的镜像地址。",
+    )
+    parser.add_argument(
+        "--image-base-url",
+        default=VAL_IMAGE_BASE_URL,
+        help="val2017 图片下载的基础 URL，会和图片文件名拼接使用。",
+    )
+
+    # 如果本地已经有 val2017 图片目录，优先从这里复制图片；
+    # 找不到对应图片时再回退到 HTTP 下载。
+    parser.add_argument("--source-image-dir", type=Path, help="可选的本地 val2017 图片目录，用于优先复制图片。")
+
+    # 可选的自定义类别表。文件中每行一个 COCO 类别名，
+    # 名称必须和 instances_val2017.json 中的 category name 一致。
+    parser.add_argument("--class-file", type=Path, help="可选类别文件，每行一个类别名。")
     return parser.parse_args()
 
 
 def main() -> None:
+    # 1. 解析命令行参数，并做最基本的合法性检查。
     args = parse_args()
     if args.max_images < 1:
         raise ValueError("--max-images must be at least 1")
 
+    # 2. 定义输出目录结构。把 annotation、prompt、metadata、download
+    # 分开放置，后续查看、复用和调试会更方便。
     output_dir = args.output_dir
     annotations_dir = output_dir / "annotations"
     images_dir = output_dir / "images"
@@ -80,12 +127,16 @@ def main() -> None:
     if args.download_images:
         images_dir.mkdir(parents=True, exist_ok=True)
 
+    # 3. 加载目标类别和 COCO val2017 annotation。如果用户没有指定
+    # annotation JSON，就下载并解压官方 COCO annotation 压缩包。
     class_names = read_class_names(args.class_file) if args.class_file else DEFAULT_CLASSES
     annotations_json = args.annotations_json or ensure_coco_annotations(downloads_dir, args.annotations_zip_url)
 
     with annotations_json.open("r", encoding="utf-8") as f:
         coco = json.load(f)
 
+    # 4. 构建真正的 COCO 格式子集：过滤类别和标注、选择图片、
+    # 可选复制/下载图片，并生成便于人工检查的 manifest 行。
     subset, manifest_rows = build_subset(
         coco=coco,
         class_names=class_names,
@@ -101,6 +152,10 @@ def main() -> None:
     manifest_path = metadata_dir / "subset_manifest.csv"
     prompt_path = prompts_dir / "coco_20_classes.txt"
 
+    # 5. 写出三类结果：
+    #    - COCO JSON：供 eval_coco.py 作为 ground truth 使用；
+    #    - manifest CSV：便于快速检查每张图片的类别和路径；
+    #    - prompt 文件：供 infer.py 直接作为 Grounding DINO 输入。
     with subset_path.open("w", encoding="utf-8") as f:
         json.dump(subset, f, ensure_ascii=False, indent=2)
 
@@ -143,7 +198,26 @@ def ensure_coco_annotations(downloads_dir: Path, annotations_zip_url: str) -> Pa
         raise FileNotFoundError(f"instances_val2017.json not found after extracting {zip_path}")
     return annotations_json
 
-
+    # subset = {
+    #     "info": coco.get("info", {}),
+    #     "licenses": coco.get("licenses", []),
+    #     "images": selected_images,
+    #     "annotations": selected_annotations,
+    #     "categories": selected_categories,
+    # }
+#     manifest_rows:
+#     [
+#     {
+#         "image_id": "91406",
+#         "file_name": "000000091406.jpg",
+#         "width": "640",
+#         "height": "424",
+#         "coco_url": "http://images.cocodataset.org/val2017/000000091406.jpg",
+#         "local_path": "data/coco_subset_100/images/000000091406.jpg",
+#         "categories": "chair;person"
+#     },
+#     ...
+# ]
 def build_subset(
     coco: dict,
     class_names: list[str],
@@ -242,7 +316,7 @@ def choose_image_ids(
         for category_id, image_ids in annotations_by_category.items()
     }
 
-    # First pass: try to cover as many selected classes as possible.
+    # 第一轮：每个类别尽量至少选一张图，避免部分类别完全缺失。
     for category_id in category_ids:
         if len(selected) >= max_images:
             break
@@ -252,7 +326,7 @@ def choose_image_ids(
                 selected_set.add(image_id)
                 break
 
-    # Fill remaining slots with random candidate images.
+    # 第二轮：如果还没达到 max_images，就从所有候选图片中随机补齐。
     all_candidates = list(annotations_by_image)
     rng.shuffle(all_candidates)
     for image_id in all_candidates:
