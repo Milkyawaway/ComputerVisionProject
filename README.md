@@ -1,32 +1,205 @@
-# Project 4: Open-Vocabulary Detection
+# Project 4: Open-Vocabulary Object Detection
 
-This repository implements Project 4 from the Computer Vision 2026 final project: **Open-Vocabulary Object Detection and Visual Grounding**.
+本项目实现 Computer Vision 2026 Final Project Topic 4: **Open-Vocabulary Object Detection and Visual Grounding**。
 
-It covers the three required technical components:
+项目基于 HuggingFace `transformers` 中的 Grounding DINO 预训练模型，完成开放词汇目标检测的模型复现、COCO 子集构建、批量推理、COCO-style 评测和失败案例分析。代码重点不是从零训练模型，而是复现并整理一个可运行、可评估、可分析的开放词汇检测 pipeline。
 
-1. Reproduce a Grounding DINO open-vocabulary detection pipeline.
-2. Prepare a COCO val2017 subset for later evaluation.
-3. Evaluate predictions on the COCO subset with COCO-style metrics.
+## 1. Project Scope
 
-The implementation uses HuggingFace `transformers` instead of compiling the original GroundingDINO repository. This is more reliable with the current Python 3.13 environment.
+当前代码覆盖课程要求中的两个核心技术部分：
 
-## Grading Policy Coverage
+| 要求 | 当前实现 |
+|---|---|
+| Method Reproduction | 使用 `IDEA-Research/grounding-dino-base` 复现 Grounding DINO 开放词汇检测流程 |
+| Dataset Evaluation | 在 COCO val2017 20 类子集上进行 COCOeval 评测 |
+| Analysis Support | 支持 threshold 对比、per-class prompt、NMS、score cutoff、per-class AP、失败案例导出 |
 
-- **Report**: see `report/report_draft_zh.pdf`. It follows the provided template and includes introduction, related work, method, experiments, conclusion, references, and member contribution placeholders.
-- **Grounding DINO paper**: see `papers/grounding_dino_arxiv_2303.05499.pdf`.
-- **Current pipeline explanation**: see `docs/pipeline_zh.md`.
-- **Experimental results**: see `results/1000_image_base_experiment/` for lightweight CSV/JSON summaries and `report/figures/` for report-ready figures.
-- **Presentation**: see `presentation/presentation_outline_zh.md` for a 15-minute Chinese presentation outline and likely Q&A points.
-- **Supplementary/code submission README**: see `SUBMISSION_README.md`.
-- **Topic bonus**: this is Topic 4, so it is eligible for the frontier-topic bonus if the implementation quality is accepted.
+主要实验使用：
 
-## Reproduction Scope
+- 模型：`IDEA-Research/grounding-dino-base`
+- 数据：COCO val2017 1000 张图片、20 个类别
+- 主配置：multi-class prompt, `box_threshold=0.25`, `text_threshold=0.25`
+- 主指标：AP、AP50、AP75、AR100
 
-This project does not train Grounding DINO from scratch. The model backbone, pretrained weights, HuggingFace processor, and Grounding DINO post-processing API are reused from the open-source model interface. The project contribution is the complete open-vocabulary detection experiment pipeline around that model: prompt normalization, single-image and batch inference, per-class prompt strategy, NMS and score cutoff, COCO subset preparation, COCOeval evaluation, per-class AP, threshold comparison, and failure-case visualization.
+## 2. Directory Structure
 
-## Main 1000-Image Base Results
+```text
+configs/
+  coco_20_classes.txt          # COCO 20 类 prompt
+  custom_demo_prompt.txt       # 自定义 demo prompt
 
-The main experiment uses 1000 COCO val2017 subset images, 20 open-vocabulary categories, and `IDEA-Research/grounding-dino-base`.
+data/
+  README.md                    # 数据目录说明
+
+docs/
+  pipeline_zh.md               # 中文 pipeline 说明
+
+scripts/
+  infer.py                     # 单图、URL、批量推理
+  prepare_coco_subset.py       # 构建 COCO 子集
+  eval_coco.py                 # COCO-style 评测
+  export_failure_cases.py      # 导出 FP/FN 失败案例
+
+src/ovd/
+  grounding_dino.py            # Grounding DINO 模型封装
+  visualize.py                 # 检测框可视化
+
+tests/
+  test_eval_and_postprocess.py # 评测和后处理单元测试
+
+requirements.txt               # Python 依赖
+```
+
+本地生成的 COCO 图片、完整预测输出和模型运行结果通常体积较大，提交代码包时可以不包含；它们可以通过下面命令重新生成。
+
+## 3. Environment
+
+```bash
+cd project4_ovd
+python -m pip install -r requirements.txt
+```
+
+推荐有 CUDA 的环境运行 Grounding DINO。默认推理设备是 `cuda:0`，也可以通过 `--device cpu` 切换到 CPU。
+
+快速检查：
+
+```bash
+python -c "import torch; print(torch.cuda.is_available())"
+python -c "from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection"
+python -m unittest discover -s tests
+```
+
+## 4. Single Image Demo
+
+```bash
+python scripts/infer.py \
+  --image-url http://images.cocodataset.org/val2017/000000039769.jpg \
+  --prompt "a cat. a remote control." \
+  --model-id IDEA-Research/grounding-dino-base \
+  --box-threshold 0.25 \
+  --text-threshold 0.25 \
+  --output-dir outputs/demo
+```
+
+每张图片会生成：
+
+- `<image_stem>.json`：结构化预测结果，包含 `boxes_xyxy`、`scores`、`text_labels`
+- `<image_stem>_ovd.jpg`：带 bbox、label、score 的可视化结果
+
+## 5. Prepare COCO Subset
+
+构建报告中使用的 1000 张 COCO 子集：
+
+```bash
+python scripts/prepare_coco_subset.py \
+  --max-images 1000 \
+  --download-images \
+  --output-dir data/coco_subset_1000
+```
+
+输出结构：
+
+```text
+data/coco_subset_1000/
+  annotations/instances_val2017_subset.json
+  images/
+  metadata/subset_manifest.csv
+  prompts/coco_20_classes.txt
+```
+
+该 annotation 文件保留 COCO 格式，后续可直接用于 `pycocotools.COCOeval`。
+
+## 6. Batch Inference
+
+主实验 multi-class prompt：
+
+```bash
+python scripts/infer.py \
+  --image-dir data/coco_subset_1000/images \
+  --prompt-file data/coco_subset_1000/prompts/coco_20_classes.txt \
+  --model-id IDEA-Research/grounding-dino-base \
+  --box-threshold 0.25 \
+  --text-threshold 0.25 \
+  --output-dir outputs/coco_subset_1000_base_multiclass_t025
+```
+
+per-class prompt + NMS：
+
+```bash
+python scripts/infer.py \
+  --image-dir data/coco_subset_1000/images \
+  --prompt-file data/coco_subset_1000/prompts/coco_20_classes.txt \
+  --model-id IDEA-Research/grounding-dino-base \
+  --box-threshold 0.25 \
+  --text-threshold 0.25 \
+  --per-class-prompts \
+  --nms-iou-threshold 0.5 \
+  --output-dir outputs/coco_subset_1000_base_perclass_nms_t025
+```
+
+## 7. COCO Evaluation
+
+```bash
+python scripts/eval_coco.py \
+  --annotations data/coco_subset_1000/annotations/instances_val2017_subset.json \
+  --pred-dir outputs/coco_subset_1000_base_multiclass_t025 \
+  --output-dir outputs/eval_1000_base_multiclass_t025 \
+  --experiment-name base1000_multiclass_t025
+```
+
+评测输出包括：
+
+- `predictions_coco.json`：转换后的 COCO detection result
+- `metrics_summary.json` / `metrics_summary.csv`：整体 AP、AP50、AP75、AR
+- `per_class_ap.csv` / `per_class_ap.png`：每类 AP
+- `unmatched_predictions.csv`：无法映射到 COCO 类别的开放文本标签
+
+## 8. Threshold Comparison
+
+先用不同 threshold 分别运行 `infer.py`，再分别运行 `eval_coco.py`。例如：
+
+```bash
+python scripts/infer.py \
+  --image-dir data/coco_subset_1000/images \
+  --prompt-file data/coco_subset_1000/prompts/coco_20_classes.txt \
+  --model-id IDEA-Research/grounding-dino-base \
+  --box-threshold 0.20 \
+  --text-threshold 0.20 \
+  --output-dir outputs/coco_subset_1000_base_multiclass_t020
+```
+
+多个实验的 summary 可以用 `eval_coco.py --compare` 生成对比表和图：
+
+```bash
+python scripts/eval_coco.py \
+  --compare \
+  outputs/eval_1000_base_multiclass_t020/metrics_summary.json \
+  outputs/eval_1000_base_multiclass_t025/metrics_summary.json \
+  outputs/eval_1000_base_multiclass_t040_t030/metrics_summary.json \
+  --output-dir outputs/eval_1000_base_threshold_compare
+```
+
+## 9. Failure Case Visualization
+
+```bash
+python scripts/export_failure_cases.py \
+  --annotations data/coco_subset_1000/annotations/instances_val2017_subset.json \
+  --predictions outputs/eval_1000_base_multiclass_t025/predictions_coco.json \
+  --image-dir data/coco_subset_1000/images \
+  --output-dir outputs/failure_cases_1000_base_multiclass_t025 \
+  --top-k 8
+```
+
+可视化颜色约定：
+
+- 绿色：ground truth
+- 蓝色：true positive
+- 红色：false positive
+- 橙色：false negative
+
+## 10. Main Result Summary
+
+1000 张 COCO 子集、Grounding DINO base 的主要结果：
 
 | Method | AP | AP50 | AP75 | AR100 | Valid predictions | Unmatched predictions |
 |---|---:|---:|---:|---:|---:|---:|
@@ -38,183 +211,11 @@ The main experiment uses 1000 COCO val2017 subset images, 20 open-vocabulary cat
 | per-class + NMS + score cutoff 0.35 | 0.1174 | 0.1420 | 0.1308 | 0.3578 | 14872 | 0 |
 | per-class + NMS + score cutoff 0.40 | 0.1122 | 0.1348 | 0.1252 | 0.3239 | 10321 | 0 |
 
-The best AP setting is multi-class prompting with `box=0.25` and `text=0.25`. Per-class prompting with NMS improves AR100 and removes unmatched labels, but it produces many more false positives and lowers AP.
+结论：multi-class prompt, 0.25 / 0.25 是本实验中的 AP 最优配置；per-class prompt + NMS 能提高召回率并消除 unmatched label，但会产生更多 false positive，因此整体 AP 较低。
 
-## Environment
+## 11. Notes
 
-```bash
-cd ComputerVisionProject  # or the repository root after cloning
-python -m pip install -r requirements.txt
-```
-
-The default model is `IDEA-Research/grounding-dino-base`.
-
-## Single Image Demo
-
-```bash
-python scripts/infer.py \
-  --image-url http://images.cocodataset.org/val2017/000000039769.jpg \
-  --prompt "a cat. a remote control." \
-  --output-dir outputs/demo
-```
-
-Each image produces:
-
-- `<stem>_ovd.jpg`: visualization with boxes, labels, and scores
-- `<stem>.json`: structured result with `boxes_xyxy`, `scores`, and `text_labels`
-
-## Prepare COCO Subset
-
-```bash
-python scripts/prepare_coco_subset.py \
-  --max-images 500 \
-  --download-images \
-  --output-dir data/coco_subset
-```
-
-Outputs:
-
-- `data/coco_subset/annotations/instances_val2017_subset.json`
-- `data/coco_subset/metadata/subset_manifest.csv`
-- `data/coco_subset/prompts/coco_20_classes.txt`
-- `data/coco_subset/images/` when `--download-images` is enabled
-
-## Batch Inference on the COCO Subset
-
-```bash
-python scripts/infer.py \
-  --image-dir data/coco_subset/images \
-  --prompt-file data/coco_subset/prompts/coco_20_classes.txt \
-  --output-dir outputs/coco_subset
-```
-
-To run one class at a time and suppress duplicate boxes with NMS:
-
-```bash
-python scripts/infer.py \
-  --image-dir data/coco_subset/images \
-  --prompt-file data/coco_subset/prompts/coco_20_classes.txt \
-  --box-threshold 0.25 \
-  --text-threshold 0.25 \
-  --per-class-prompts \
-  --nms-iou-threshold 0.5 \
-  --output-dir outputs/coco_subset_per_class_nms
-```
-
-To reproduce the score-cutoff variants used in the report:
-
-```bash
-python scripts/infer.py \
-  --image-dir data/coco_subset_1000/images \
-  --prompt-file data/coco_subset_1000/prompts/coco_20_classes.txt \
-  --model-id IDEA-Research/grounding-dino-base \
-  --box-threshold 0.25 \
-  --text-threshold 0.25 \
-  --per-class-prompts \
-  --nms-iou-threshold 0.5 \
-  --post-score-cutoff 0.30 \
-  --output-dir outputs/coco_subset_1000_base_perclass_nms_t025_score030
-```
-
-## COCO Evaluation
-
-```bash
-python scripts/eval_coco.py \
-  --annotations data/coco_subset/annotations/instances_val2017_subset.json \
-  --pred-dir outputs/coco_subset \
-  --output-dir outputs/eval_coco \
-  --experiment-name grounding_dino_base_coco20
-```
-
-Outputs:
-
-- `outputs/eval_coco/predictions_coco.json`: predictions converted to COCO detection format
-- `outputs/eval_coco/metrics_summary.json`: AP, AP50, AP75, AR, thresholds, and prediction counts
-- `outputs/eval_coco/metrics_summary.csv`: one-row summary table for reports
-- `outputs/eval_coco/per_class_ap.csv`: AP/AP50/AP75 for each category
-- `outputs/eval_coco/per_class_ap.png`: report-ready per-class AP bar chart
-- `outputs/eval_coco/unmatched_predictions.csv`: predictions skipped because labels did not match COCO categories
-
-## Threshold Comparison
-
-Run inference into separate directories with different thresholds, then evaluate each directory:
-
-```bash
-python scripts/infer.py \
-  --image-dir data/coco_subset/images \
-  --prompt-file data/coco_subset/prompts/coco_20_classes.txt \
-  --box-threshold 0.25 \
-  --text-threshold 0.25 \
-  --output-dir outputs/coco_subset_t025
-
-python scripts/eval_coco.py \
-  --annotations data/coco_subset/annotations/instances_val2017_subset.json \
-  --pred-dir outputs/coco_subset_t025 \
-  --output-dir outputs/eval_t025 \
-  --experiment-name t025
-```
-
-Compare multiple runs:
-
-```bash
-python scripts/eval_coco.py \
-  --compare outputs/eval_t025/metrics_summary.json outputs/eval_t035/metrics_summary.json outputs/eval_t045/metrics_summary.json \
-  --output-dir outputs/eval_compare
-```
-
-## Failure Case Visualization
-
-```bash
-python scripts/export_failure_cases.py \
-  --annotations data/coco_subset_1000/annotations/instances_val2017_subset.json \
-  --predictions outputs/eval_1000_base_multiclass_t025/predictions_coco.json \
-  --image-dir data/coco_subset_1000/images \
-  --output-dir outputs/failure_cases_1000_base_multiclass_t025 \
-  --top-k 12
-```
-
-The exported images use green for ground truth, blue for true positives, red for false positives, and orange for false negatives.
-
-## Quick Checks
-
-Run lightweight utility tests:
-
-```bash
-python -m unittest discover -s tests
-```
-
-Check CUDA and key imports:
-
-```bash
-python -c "import torch; print(torch.cuda.is_available())"
-python -c "from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection"
-```
-
-## Custom Image Demo
-
-Put self-collected classroom, campus, or lab images in `data/custom_demo/images/`, then run:
-
-```bash
-python scripts/infer.py \
-  --image-dir data/custom_demo/images \
-  --prompt-file configs/custom_demo_prompt.txt \
-  --model-id IDEA-Research/grounding-dino-base \
-  --box-threshold 0.25 \
-  --text-threshold 0.25 \
-  --per-class-prompts \
-  --nms-iou-threshold 0.5 \
-  --output-dir outputs/custom_demo
-```
-
-## Notes
-
-- Prompts are normalized to lower-case English phrases separated by periods.
-- Bare labels such as `person` are converted to `a person`.
-- Evaluation maps predicted labels to COCO categories with exact matching after removing `a`, `an`, or `the`.
-- Visual grounding metrics such as RefCOCO accuracy are not included in this COCO detection evaluation.
-- Downloaded COCO images and full inference outputs are intentionally ignored by git. Use the commands above to regenerate them. Lightweight result summaries and report figures are committed under `results/` and `report/figures/`.
-
-References:
-
-- HuggingFace Grounding DINO docs: https://huggingface.co/docs/transformers/model_doc/grounding-dino
-- Grounding DINO base model: https://huggingface.co/IDEA-Research/grounding-dino-base
+- Grounding DINO 的 prompt 推荐使用英文小写和句号分隔。
+- `box_threshold` 决定 query/box 是否保留，`text_threshold` 决定哪些文本 token 被恢复成 label。
+- `eval_coco.py` 采用精确类别匹配，混合标签如 `a bicycle a motorcycle` 会写入 `unmatched_predictions.csv`，不参与 COCOeval。
+- 本项目评估的是 COCO-style object detection，不包含 RefCOCO 等 visual grounding 专用指标。
